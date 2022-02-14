@@ -6,7 +6,7 @@
 
 包括 **区块头** 和 **区块体** 
 
-![](E:.\pic\blockchain-block.jpg)
+![image](https://github.com/Karry-Almond/blog.io/raw/gh-pages/pic/blockchain-block.jpg)
 
 1. 区块头
 
@@ -36,7 +36,7 @@ Patricia树的理解：Trie->基数树（Patricia树）
 
    称为前缀树或者字典树。用于保存关联数组，其中的键通常是字符串。
 
-   ![](.\pic\blockchain-trie.PNG)
+   ![](https://github.com/Karry-Almond/blog.io/raw/gh-pages/pic/blockchain-trie.PNG)
 
 2. [基数树（Patricia树）](https://zh.wikipedia.org/wiki/%E5%9F%BA%E6%95%B0%E6%A0%91)
 
