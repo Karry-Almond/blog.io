@@ -2,11 +2,51 @@
 
 一个写的很好的中文 **比特币** （可能不适用于以太坊）笔记网址，包含了100篇区块链偏向技术和底层知识的博客：http://www.btccfo.com/category/note/
 
-## 默克尔树
+## 区块结构
 
+包括 **区块头** 和 **区块体** 
 
+![](E:.\pic\blockchain-block.jpg)
+
+1. 区块头
+
+   主要包含了一系列的数值、引用的数值以及哈希值。特别注意有三棵树（状态树、交易树、收据树）的根哈希都存放在区块头中。
+
+2. 区块体
+
+   包含 叔块 和 交易列表。这里的交易列表是指一系列交易本身（即包含了to，from，data等信息）
+
+具体查看网址：https://blog.csdn.net/ice_fire_x/article/details/104211388
+
+和https://github.com/laalaguer/ethereum-compass/issues/13
+
+## Merkle Patricia tree（MTP）
+
+Merkle Patricia tree是融合了Merkle树和Patricia树（路径压缩前缀树）的结构而形成的。
+
+### Merkle树
 
 具体查看网址：https://blog.csdn.net/weixin_37504041/article/details/80474636
+
+### Patricia树
+
+Patricia树的理解：Trie->基数树（Patricia树）
+
+1. [Trie](https://zh.wikipedia.org/wiki/Trie)
+
+   称为前缀树或者字典树。用于保存关联数组，其中的键通常是字符串。
+
+   ![](.\pic\blockchain-trie.PNG)
+
+2. [基数树（Patricia树）](https://zh.wikipedia.org/wiki/%E5%9F%BA%E6%95%B0%E6%A0%91)
+
+   是一种更节省空间的Trie（前缀树），其中作为唯一子节点的每个节点都与其父节点合并，边既可以表示为元素序列又可以表示为单个元素
+
+### MTP 
+
+******待完成
+
+具体查看网址：https://blog.csdn.net/itleaks/article/details/79992072
 
 ## RLP编码和解码
 
@@ -84,4 +124,24 @@
 
 具体查看网址：https://ethereum.org/zh/developers/docs/nodes-and-clients/#sync-modes
 
-## 全节点如何同步区块链
+## 全节点如何同步（仅指达到最高高度）区块链
+
+1. 连接到对等节点，发送**version消息**，这是因为该消息中含有的BestHeight字段标示了一个节点当前的区块链高度（区块数量）。节点可以从它的对等节点中得到版本消息，了解双方各自有多少区块，从而可以与其自身区块链所拥有的区块数量进行比较。
+2. 对等节点们会交换一个**getblocks消息**，其中包含他们本地区块链的顶端区块哈希值（指纹）
+3. 更高的节点通过使用**inv（inventory）消息**把这些区块的哈希值传播出去。缺少这些区块的节点便可以通过各自发送的**getdata消息**来请求得到全区块信息，这些节点会向所有与之相连的对等节点请求区块，并通过分摊工作量的方式进行下载
+4. 如果一个节点需要更新大量区块，它会在上一请求完成后才发送对新区块的请求，从而允许对等节点控制更新速度，不至于压垮网络
+
+具体查看网址：http://www.btccfo.com/blockchain-tec/769
+
+## read list & 问题：
+
+https://zhuanlan.zhihu.com/p/31022434
+
+https://blog.csdn.net/ice_fire_x/article/details/104211388
+
+https://blog.51cto.com/u_9634496/3077006
+
+https://learnblockchain.cn/2020/01/27/7c1fcd777d7b
+
+1. 交易树存放在levelDB中吗？每一个区块有一个交易树，这种特殊之处在存放的时候有体现吗？交易树的值是什么，因为交易已经在区块中存过了，那交易树的值是什么
+2. 收据树存在哪的？收据树存的值是什么
