@@ -319,3 +319,5 @@ contract exploit{
 
 不管有没有出现错误提示，直接执行即可。出现错误提示仅仅意味着，在以太坊节点模拟执行的时候会出错，这是因为根据模拟执行的最新区块号算出的answer不正确。不出现错误也仅仅意味着根据模拟执行的最新区块号算出的answer正确。只有根据实际执行的最新区块号算出的answer正确才行，所以直接一直执行就可以了。
 
+### [Predict the block hash](https://capturetheether.com/challenges/lotteries/predict-the-block-hash/)
+
